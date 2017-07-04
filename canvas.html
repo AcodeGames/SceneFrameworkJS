@@ -1,0 +1,190 @@
+﻿<!doctype html>
+<html lang="en">
+<!--
+    Acode Game Scene Framework
+
+    Gives the following functionality:
+    * Independent scene management with scene pool and returning scenes from scenes
+    * Resizing canvas and adjusting touch/mouse input accordingly
+    * Resolve Touch and Mouse conflicts:
+        touch and mouse coordinates are calculated differently
+        and mouseclick event is fired with touch
+
+    Every scene object must have 3 methods to
+    * enter
+    * handleInput
+    * cleanup
+
+    TODO:
+    * Better documentation
+    * Some good samples
+
+    Free licence:
+    * Use anyway you want (personal use, commercial use, modify, teacing, learning, etc.).
+    * Author takes no liability what so ever.
+    * Bug reports, ideas, contributions and linkings are appreciated.
+-->
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="cache-control" content="max-age=0" />
+    <meta http-equiv="cache-control" content="no-cache" />
+    <meta http-equiv="expires" content="0" />
+    <meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />
+    <meta http-equiv="pragma" content="no-cache" />
+    <meta name="viewport" content="user-scalable=0">
+    <title>The HTML5 Game</title>
+    <style type="text/css">
+        <!--
+        * {
+            /* Disable blinking on IOS and on Safary when touched */
+            -webkit-tap-highlight-color: transparent;
+            /* Disable screwing with screen */
+            touch-action: none;
+        }
+
+        body {
+            background-color: #000000;
+            font-size: 12px;
+            font-family: Verdana, Arial, Helvetica, sans-serif;
+            color: #CCCCCC;
+            margin: 0;
+            padding: 0;
+        }
+
+        #canvas {
+            padding-left: 0;
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+            width: 90%;
+        }
+        -->
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script src="assets/G02Levels.js"></script>
+    <script>
+        (function () {
+            "use strict";
+            // using GAME namespace to avoid polluting global namespace
+            window.GAME = window.GAME || {};
+            GAME.scenes = GAME.scenes || [];    // Scene pool
+            GAME.ActScene = 0;					// Active Scene
+            GAME.settings = {};                 // game settings
+            GAME.session = {};                  // current game session variables, lives etc.
+            var imgCount = 0;
+            var imgLoaded = 0;
+
+            // setting up GAME canvas
+            var coef = 1;   // default scale is 1 (100%)
+            GAME.canvas = document.getElementById('canvas');
+            GAME.ctx = GAME.canvas.getContext('2d');
+            GAME.canvasStyle = window.getComputedStyle(GAME.canvas);
+            GAME.canvas.width = 876;
+            GAME.canvas.height = 540;
+            GAME.canvas.style.border = "1px solid black";
+
+            // adapt canvas dynamically when window is resized
+            function initCanvas() {
+                var ratio = GAME.canvas.width / GAME.canvas.height;
+                var ww = window.innerWidth;
+                var wh = window.innerHeight;
+                var ch = (wh * ratio * 100) / ww;
+                var margin = 0.5;
+                var w;
+                // get rid of scrollbars, increase margin above if necessary
+                GAME.canvas.style.width = (ww / wh < ratio) ? 100 - margin + '%' : ch - margin + '%';
+                // do not change order or the coef will be incorrect and messes up input coordinates
+                w = GAME.canvasStyle.width.replace("px", "");
+                // adjust coef for correct input detection
+                coef = GAME.canvas.width / w;
+                // sometimes there may be need to call: GAME.scene.render();
+            }
+
+            // Scene Manager FSM
+            GAME.scene = false;
+
+            GAME.enterScene = function (newScene) {
+                if (this.scene) {
+                    // every scene should clean up its own (circular) dependencies
+                    this.scene.cleanup();
+                    // Usually taken care of by garbage collector, but just to make sure
+                    delete this.scene;
+                }
+                this.scene = newScene;
+                this.scene.enter();
+            };
+
+            GAME.handleInput = function (input) {
+                // new/next scene can be returned from current scene handleInput method
+                var newScene = GAME.scene.handleInput(input);
+                if (newScene !== undefined) {
+                    this.enterScene(newScene);
+                }
+            };
+
+            // start first scene when all images are loaded
+            function checkImgLoaded() {
+                if (imgLoaded === imgCount) {
+                    // When using dynamic states DON't forget Object.create() or new!!!
+                    GAME.enterScene(new GAME.scenes[GAME.ActScene]());
+                }
+            }
+
+            initCanvas();
+            checkImgLoaded();
+
+            // async stuff
+
+            window.addEventListener("resize", initCanvas);
+
+            // recursive scene image preloader
+            // TODO: one more level for arrays
+            GAME.scenes.forEach(function (sc) {
+                if (sc.img) {
+                    Object.keys(sc.img).forEach(function (im) {
+                        imgCount += 1;
+                        sc.img[im].onload = function () {
+                            imgLoaded += 1;
+                            checkImgLoaded();
+                        }
+                    });
+                }
+            });
+
+            function eventHandler(event) {
+                var x, y;
+                var handles = {
+                    touchstart: "down",
+                    mousedown: "down",
+                    touchmove: "move",
+                    mousemove: "move",
+                    touchend: "up",
+                    mouseup: "up"
+                };
+                if (event.type.includes("touch")) {
+                    x = event.changedTouches[0].pageX - canvas.offsetLeft;
+                    y = event.changedTouches[0].pageY - canvas.offsetTop;
+                }
+                else if (event.type.includes("mouse")) {
+                    x = event.pageX - canvas.offsetLeft;
+                    y = event.pageY - canvas.offsetTop;
+                }
+                x = Math.round(x * coef);
+                y = Math.round(y * coef);
+                GAME.handleInput([x, y, handles[event.type]]);
+            }
+
+            canvas.ontouchstart = eventHandler;
+            canvas.ontouchmove = eventHandler;
+            canvas.ontouchend = eventHandler;
+            canvas.onmousedown = eventHandler;
+            canvas.onmousemove = eventHandler;
+            canvas.onmouseup = eventHandler;
+
+        })();
+    </script>
+</body>
+</html>
